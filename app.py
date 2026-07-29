@@ -26,6 +26,11 @@ if "incident_logs" not in st.session_state:
         columns=["Timestamp", "pH", "Turbidity (NTU)", "TDS (ppm)", "Temp (°C)", "Risk Status"]
     )
 
+if "dispatch_tickets" not in st.session_state:
+    st.session_state.dispatch_tickets = pd.DataFrame(
+        columns=["Ticket ID", "Timestamp", "Station", "Urgency Level", "Assigned Response Unit", "Action Plan", "Status"]
+    )
+
 # Helper function to generate 24-hour historical trend telemetry
 @st.cache_data
 def generate_historical_data():
@@ -238,11 +243,12 @@ if enable_alerts and webhook_url:
 st.title("💧 Lower Mekong Outbreak Early Warning Engine")
 st.caption("AI-Powered Multi-Station Water Quality Surveillance Platform")
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🎛️ Single Sensor Diagnostic", 
     "📈 24h Historical Analytics",
     "🧪 WQI & Compliance Engine",
     "🤹 Outbreak Simulator",
+    "🛠️ Field Response Dispatch",
     "🗺️ Multi-Station Map", 
     "📜 Incident Logging & PDF Reports"
 ])
@@ -365,7 +371,7 @@ with tab3:
         st.info("💡 **Sensor Health Status:** All 4 probes reporting operational online telemetry. Re-calibration recommended every 90 days.")
 
 # ------------------------------------------
-# TAB 4: OUTBREAK SIMULATOR (FEATURE #5)
+# TAB 4: OUTBREAK SIMULATOR
 # ------------------------------------------
 with tab4:
     st.subheader("🤹 Interactive Outbreak Scenario Simulator & Response Command")
@@ -412,9 +418,56 @@ with tab4:
             st.error("🚨 **CRITICAL OUTBREAK EMERGENCY PROTOCOL**\n\n* **Shock Chlorination:** Scale dosing to 8.0 mg/L immediately.\n* **Intake Valve Shutdown:** Isolate raw water intake.\n* **Public Safety Order:** Issue mandatory boil-water advisory across affected administrative zones.\n* **Field Logistics:** Dispatch mobile testing teams for pathogen culture sampling.")
 
 # ------------------------------------------
-# TAB 5: MULTI-STATION MAP
+# TAB 5: FIELD RESPONSE DISPATCH (FEATURE #6)
 # ------------------------------------------
 with tab5:
+    st.subheader("🛠️ Field Technician Dispatch & Probe Maintenance Hub")
+    st.caption("Coordinate mobile water response units and log probe calibration cycles.")
+    
+    col_disp1, col_disp2 = st.columns([1, 1])
+    
+    with col_disp1:
+        st.markdown("### 🚑 Issue Field Dispatch Order")
+        with st.form("dispatch_form"):
+            station_name = st.selectbox("Target Surveillance Station", ["Station Alpha", "Station Beta", "Station Gamma", "Station Delta"])
+            urgency = st.select_slider("Urgency Level", options=["LOW (Routine)", "MEDIUM (Warning)", "HIGH (Critical Outbreak)"])
+            assigned_unit = st.selectbox("Assign Response Unit", ["Alpha Field Biohazard Unit", "Beta Technician Squad", "Gamma Calibration Team"])
+            action_plan = st.text_area("Field Action Instructions", value=f"Perform emergency water sampling and probe inspection for {status} condition.")
+            
+            submit_dispatch = st.form_submit_button("🚀 Deploy Field Response Team")
+            
+            if submit_dispatch:
+                ticket_id = f"TK-{np.random.randint(1000, 9999)}"
+                new_ticket = pd.DataFrame([{
+                    "Ticket ID": ticket_id,
+                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "Station": station_name,
+                    "Urgency Level": urgency,
+                    "Assigned Response Unit": assigned_unit,
+                    "Action Plan": action_plan,
+                    "Status": "DISPATCHED (In Transit)"
+                }])
+                st.session_state.dispatch_tickets = pd.concat([st.session_state.dispatch_tickets, new_ticket], ignore_index=True)
+                st.success(f"Dispatch ticket `{ticket_id}` successfully generated!")
+
+    with col_disp2:
+        st.markdown("### 🔧 Sensor Probe Calibration Log")
+        calib_data = pd.DataFrame({
+            "Sensor Probe": ["pH Glass Electrode", "Optical Turbidity Sensor", "TDS Conductivity Probe", "RTD Temp Sensor"],
+            "Last Calibrated": ["12 Days Ago", "45 Days Ago", "5 Days Ago", "2 Days Ago"],
+            "Drift Tolerance": ["± 0.05", "± 0.2 NTU", "± 10 ppm", "± 0.1 °C"],
+            "Health Status": ["OPTIMAL", "RE-CALIBRATION DUE", "OPTIMAL", "OPTIMAL"]
+        })
+        st.dataframe(calib_data, use_container_width=True)
+
+    st.markdown("---")
+    st.markdown("### 📋 Active Field Dispatch Operations Log")
+    st.dataframe(st.session_state.dispatch_tickets, use_container_width=True)
+
+# ------------------------------------------
+# TAB 6: MULTI-STATION MAP
+# ------------------------------------------
+with tab6:
     st.subheader("Regional Monitoring Stations")
     
     map_data = pd.DataFrame({
@@ -440,9 +493,9 @@ with tab5:
     st.plotly_chart(fig_map, use_container_width=True)
 
 # ------------------------------------------
-# TAB 6: INCIDENT LOGGING & PDF REPORTS
+# TAB 7: INCIDENT LOGGING & PDF REPORTS
 # ------------------------------------------
-with tab6:
+with tab7:
     st.subheader("📜 Incident Reporting & Export Suite")
     
     col_a, col_b = st.columns([1, 1])
