@@ -5,6 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import requests
 from datetime import datetime, timedelta
+from fpdf import FPDF
 
 # ==========================================
 # 1. PAGE CONFIGURATION & INITIALIZATION
@@ -79,11 +80,10 @@ def send_emergency_alert(webhook_url, water_data, risk_level):
         return False, str(e)
 
 # ==========================================
-# 3. WATER QUALITY INDEX (WQI) CALCULATOR (FEATURE #3)
+# 3. WATER QUALITY INDEX (WQI) CALCULATOR
 # ==========================================
 def calculate_wqi(ph_val, turb_val, tds_val, temp_val):
     """Calculates weighted WQI (0-100 scale) based on WHO guidelines."""
-    # Sub-index scoring logic
     q_ph = 100 - (abs(ph_val - 7.0) / 1.5) * 50 if (ph_val < 6.5 or ph_val > 8.5) else 100 - (abs(ph_val - 7.0) * 15)
     q_ph = max(0, min(100, q_ph))
     
@@ -91,7 +91,6 @@ def calculate_wqi(ph_val, turb_val, tds_val, temp_val):
     q_tds = max(0, 100 - (tds_val / 500.0) * 25)
     q_temp = max(0, 100 - max(0, temp_val - 25.0) * 5)
 
-    # Weighted sum
     wqi = (q_ph * 0.30) + (q_turb * 0.40) + (q_tds * 0.15) + (q_temp * 0.15)
     wqi_score = round(max(0, min(100, wqi)), 1)
 
@@ -107,7 +106,85 @@ def calculate_wqi(ph_val, turb_val, tds_val, temp_val):
     return wqi_score, wqi_class
 
 # ==========================================
-# 4. SIDEBAR: SENSOR TELEMETRY & ALERTS
+# 4. AUTOMATED PDF REPORT GENERATOR (FEATURE #4)
+# ==========================================
+def generate_pdf_report(water_data, wqi_score, wqi_class, status):
+    """Generates an official PDF surveillance report."""
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Header Title
+    pdf.set_font("Helvetica", 'B', 16)
+    pdf.cell(0, 10, "WATER QUALITY SURVEILLANCE & COMPLIANCE REPORT", ln=True, align='C')
+    pdf.set_font("Helvetica", 'I', 10)
+    pdf.cell(0, 8, f"Lower Mekong Regional Surveillance Engine | Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True, align='C')
+    pdf.ln(5)
+    
+    # Section 1: Executive Summary
+    pdf.set_font("Helvetica", 'B', 12)
+    pdf.cell(0, 8, "1. Executive Status & Risk Summary", ln=True)
+    pdf.set_font("Helvetica", '', 10)
+    pdf.cell(0, 6, f"Surveillance Status: {status}", ln=True)
+    pdf.cell(0, 6, f"Water Quality Index (WQI): {wqi_score} / 100", ln=True)
+    pdf.cell(0, 6, f"WQI Rating: {wqi_class}", ln=True)
+    pdf.ln(5)
+
+    # Section 2: Sensor Telemetry & WHO Compliance Table
+    pdf.set_font("Helvetica", 'B', 12)
+    pdf.cell(0, 8, "2. Telemetry Measurements & WHO Compliance", ln=True)
+    
+    pdf.set_font("Helvetica", 'B', 10)
+    pdf.cell(45, 7, "Parameter", 1)
+    pdf.cell(45, 7, "Value", 1)
+    pdf.cell(50, 7, "WHO Standard", 1)
+    pdf.cell(40, 7, "Compliance", 1)
+    pdf.ln()
+
+    pdf.set_font("Helvetica", '', 10)
+    
+    # pH
+    pdf.cell(45, 6, "pH Level", 1)
+    pdf.cell(45, 6, f"{water_data['ph']:.2f}", 1)
+    pdf.cell(50, 6, "6.5 - 8.5", 1)
+    pdf.cell(40, 6, "PASS" if 6.5 <= water_data['ph'] <= 8.5 else "FAIL", 1)
+    pdf.ln()
+    
+    # Turbidity
+    pdf.cell(45, 6, "Turbidity", 1)
+    pdf.cell(45, 6, f"{water_data['turbidity']:.2f} NTU", 1)
+    pdf.cell(50, 6, "< 5.0 NTU", 1)
+    pdf.cell(40, 6, "PASS" if water_data['turbidity'] <= 5.0 else "FAIL", 1)
+    pdf.ln()
+    
+    # TDS
+    pdf.cell(45, 6, "TDS", 1)
+    pdf.cell(45, 6, f"{water_data['tds']} ppm", 1)
+    pdf.cell(50, 6, "< 500 ppm", 1)
+    pdf.cell(40, 6, "PASS" if water_data['tds'] <= 500 else "FAIL", 1)
+    pdf.ln()
+    
+    # Temperature
+    pdf.cell(45, 6, "Temperature", 1)
+    pdf.cell(45, 6, f"{water_data['temp']:.1f} C", 1)
+    pdf.cell(50, 6, "< 30.0 C", 1)
+    pdf.cell(40, 6, "PASS" if water_data['temp'] <= 30.0 else "FAIL", 1)
+    pdf.ln(8)
+
+    # Section 3: Recommended Action Protocols
+    pdf.set_font("Helvetica", 'B', 12)
+    pdf.cell(0, 8, "3. Recommended Action Protocol", ln=True)
+    pdf.set_font("Helvetica", '', 10)
+    if status == "SAFE":
+        pdf.multi_cell(0, 6, "Water parameters remain within optimal standard ranges. Routine 24-hour monitoring protocol in effect.")
+    elif status == "MODERATE":
+        pdf.multi_cell(0, 6, "Elevated risk detected. Increase monitoring frequency, verify active chlorination, and notify site technical leads.")
+    else:
+        pdf.multi_cell(0, 6, "CRITICAL ALERT: Immediate response required. Dispatch emergency field unit, trigger containment protocol, and issue public safety advisory.")
+
+    return bytes(pdf.output())
+
+# ==========================================
+# 5. SIDEBAR: SENSOR TELEMETRY & ALERTS
 # ==========================================
 st.sidebar.title("📡 Sensor Telemetry Simulator")
 
@@ -126,7 +203,7 @@ webhook_url = st.sidebar.text_input(
 )
 
 # ==========================================
-# 5. PREDICTIVE ML RISK ASSESSMENT ENGINE
+# 6. PREDICTIVE ML RISK ASSESSMENT ENGINE
 # ==========================================
 def evaluate_risk_ml(ph_val, turb_val, tds_val, temp_val):
     ph_score = max(0.0, abs(ph_val - 7.5) - 1.0) * 1.5
@@ -164,7 +241,7 @@ if enable_alerts and webhook_url:
         st.session_state.last_alert_state = "SAFE"
 
 # ==========================================
-# 6. DASHBOARD TABS
+# 7. DASHBOARD TABS
 # ==========================================
 st.title("💧 Lower Mekong Outbreak Early Warning Engine")
 st.caption("AI-Powered Multi-Station Water Quality Surveillance Platform")
@@ -174,7 +251,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📈 24h Historical Analytics",
     "🧪 WQI & Compliance Engine",
     "🗺️ Multi-Station Map", 
-    "📜 Incident Logging & Export"
+    "📜 Incident Logging & PDF Reports"
 ])
 
 # ------------------------------------------
@@ -247,7 +324,7 @@ with tab2:
     st.plotly_chart(fig_trend, use_container_width=True)
 
 # ------------------------------------------
-# TAB 3: WQI & COMPLIANCE ENGINE (FEATURE #3)
+# TAB 3: WQI & COMPLIANCE ENGINE
 # ------------------------------------------
 with tab3:
     st.subheader("🧪 Water Quality Index (WQI) & Regulatory Compliance")
@@ -256,7 +333,6 @@ with tab3:
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        # WQI Gauge Chart
         fig_wqi = go.Figure(go.Indicator(
             mode="gauge+number",
             value=wqi_score,
@@ -324,23 +400,38 @@ with tab4:
     st.plotly_chart(fig_map, use_container_width=True)
 
 # ------------------------------------------
-# TAB 5: INCIDENT LOGGING & EXPORT
+# TAB 5: INCIDENT LOGGING & PDF REPORTS (FEATURE #4)
 # ------------------------------------------
 with tab5:
-    st.subheader("Incident Reporting & Log")
+    st.subheader("📜 Incident Reporting & Export Suite")
     
-    if st.button("📝 Log Current Reading"):
-        new_entry = pd.DataFrame([{
-            "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "pH": ph,
-            "Turbidity (NTU)": turbidity,
-            "TDS (ppm)": tds,
-            "Temp (°C)": temp,
-            "Risk Status": status
-        }])
-        st.session_state.incident_logs = pd.concat([st.session_state.incident_logs, new_entry], ignore_index=True)
-        st.success("Current telemetry reading logged successfully!")
+    col_a, col_b = st.columns([1, 1])
+    
+    with col_a:
+        if st.button("📝 Log Current Reading"):
+            new_entry = pd.DataFrame([{
+                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "pH": ph,
+                "Turbidity (NTU)": turbidity,
+                "TDS (ppm)": tds,
+                "Temp (°C)": temp,
+                "Risk Status": status
+            }])
+            st.session_state.incident_logs = pd.concat([st.session_state.incident_logs, new_entry], ignore_index=True)
+            st.success("Current telemetry reading logged successfully!")
 
+    with col_b:
+        # Generate and Download Official PDF Report
+        pdf_bytes = generate_pdf_report(water_metrics, wqi_score, wqi_class, status)
+        st.download_button(
+            label="📄 Download Official PDF Report",
+            data=pdf_bytes,
+            file_name=f"Water_Quality_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+            mime="application/pdf"
+        )
+
+    st.markdown("---")
+    st.subheader("Incident Telemetry Log")
     st.dataframe(st.session_state.incident_logs, use_container_width=True)
 
     if not st.session_state.incident_logs.empty:
