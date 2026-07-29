@@ -106,21 +106,19 @@ def calculate_wqi(ph_val, turb_val, tds_val, temp_val):
     return wqi_score, wqi_class
 
 # ==========================================
-# 4. AUTOMATED PDF REPORT GENERATOR (FEATURE #4)
+# 4. AUTOMATED PDF REPORT GENERATOR
 # ==========================================
 def generate_pdf_report(water_data, wqi_score, wqi_class, status):
     """Generates an official PDF surveillance report."""
     pdf = FPDF()
     pdf.add_page()
     
-    # Header Title
     pdf.set_font("Helvetica", 'B', 16)
     pdf.cell(0, 10, "WATER QUALITY SURVEILLANCE & COMPLIANCE REPORT", ln=True, align='C')
     pdf.set_font("Helvetica", 'I', 10)
     pdf.cell(0, 8, f"Lower Mekong Regional Surveillance Engine | Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True, align='C')
     pdf.ln(5)
     
-    # Section 1: Executive Summary
     pdf.set_font("Helvetica", 'B', 12)
     pdf.cell(0, 8, "1. Executive Status & Risk Summary", ln=True)
     pdf.set_font("Helvetica", '', 10)
@@ -129,7 +127,6 @@ def generate_pdf_report(water_data, wqi_score, wqi_class, status):
     pdf.cell(0, 6, f"WQI Rating: {wqi_class}", ln=True)
     pdf.ln(5)
 
-    # Section 2: Sensor Telemetry & WHO Compliance Table
     pdf.set_font("Helvetica", 'B', 12)
     pdf.cell(0, 8, "2. Telemetry Measurements & WHO Compliance", ln=True)
     
@@ -142,35 +139,30 @@ def generate_pdf_report(water_data, wqi_score, wqi_class, status):
 
     pdf.set_font("Helvetica", '', 10)
     
-    # pH
     pdf.cell(45, 6, "pH Level", 1)
     pdf.cell(45, 6, f"{water_data['ph']:.2f}", 1)
     pdf.cell(50, 6, "6.5 - 8.5", 1)
     pdf.cell(40, 6, "PASS" if 6.5 <= water_data['ph'] <= 8.5 else "FAIL", 1)
     pdf.ln()
     
-    # Turbidity
     pdf.cell(45, 6, "Turbidity", 1)
     pdf.cell(45, 6, f"{water_data['turbidity']:.2f} NTU", 1)
     pdf.cell(50, 6, "< 5.0 NTU", 1)
     pdf.cell(40, 6, "PASS" if water_data['turbidity'] <= 5.0 else "FAIL", 1)
     pdf.ln()
     
-    # TDS
     pdf.cell(45, 6, "TDS", 1)
     pdf.cell(45, 6, f"{water_data['tds']} ppm", 1)
     pdf.cell(50, 6, "< 500 ppm", 1)
     pdf.cell(40, 6, "PASS" if water_data['tds'] <= 500 else "FAIL", 1)
     pdf.ln()
     
-    # Temperature
     pdf.cell(45, 6, "Temperature", 1)
     pdf.cell(45, 6, f"{water_data['temp']:.1f} C", 1)
     pdf.cell(50, 6, "< 30.0 C", 1)
     pdf.cell(40, 6, "PASS" if water_data['temp'] <= 30.0 else "FAIL", 1)
     pdf.ln(8)
 
-    # Section 3: Recommended Action Protocols
     pdf.set_font("Helvetica", 'B', 12)
     pdf.cell(0, 8, "3. Recommended Action Protocol", ln=True)
     pdf.set_font("Helvetica", '', 10)
@@ -246,10 +238,11 @@ if enable_alerts and webhook_url:
 st.title("💧 Lower Mekong Outbreak Early Warning Engine")
 st.caption("AI-Powered Multi-Station Water Quality Surveillance Platform")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🎛️ Single Sensor Diagnostic", 
     "📈 24h Historical Analytics",
     "🧪 WQI & Compliance Engine",
+    "🤹 Outbreak Simulator",
     "🗺️ Multi-Station Map", 
     "📜 Incident Logging & PDF Reports"
 ])
@@ -372,9 +365,56 @@ with tab3:
         st.info("💡 **Sensor Health Status:** All 4 probes reporting operational online telemetry. Re-calibration recommended every 90 days.")
 
 # ------------------------------------------
-# TAB 4: MULTI-STATION MAP
+# TAB 4: OUTBREAK SIMULATOR (FEATURE #5)
 # ------------------------------------------
 with tab4:
+    st.subheader("🤹 Interactive Outbreak Scenario Simulator & Response Command")
+    st.caption("Stress-test surveillance algorithms against simulated regional contamination emergency scenarios.")
+    
+    col_sim1, col_sim2 = st.columns([1, 1])
+    
+    with col_sim1:
+        st.markdown("### ⚡ Select Contamination Scenario")
+        scenario = st.radio(
+            "Inject preset stress conditions into engine:",
+            [
+                "Baseline / Optimal Conditions",
+                "Monsoon Flooding (High Turbidity Spike)",
+                "Industrial Chemical Runoff (pH Drop + High TDS)",
+                "Thermal Bacterial Bloom (High Temp + High Turbidity)"
+            ]
+        )
+        
+        if scenario == "Monsoon Flooding (High Turbidity Spike)":
+            sim_ph, sim_turb, sim_tds, sim_temp = 7.10, 18.50, 420, 24.0
+        elif scenario == "Industrial Chemical Runoff (pH Drop + High TDS)":
+            sim_ph, sim_turb, sim_tds, sim_temp = 5.20, 8.20, 1150, 26.5
+        elif scenario == "Thermal Bacterial Bloom (High Temp + High Turbidity)":
+            sim_ph, sim_turb, sim_tds, sim_temp = 8.80, 22.00, 680, 36.5
+        else:
+            sim_ph, sim_turb, sim_tds, sim_temp = 7.30, 2.10, 280, 23.0
+            
+        sim_status, sim_threat, sim_safe, sim_mod, sim_outbreak = evaluate_risk_ml(sim_ph, sim_turb, sim_tds, sim_temp)
+        sim_wqi, sim_wqi_class = calculate_wqi(sim_ph, sim_turb, sim_tds, sim_temp)
+        
+        st.markdown("---")
+        st.markdown(f"**Simulated Status:** `{sim_status}`")
+        st.markdown(f"**Simulated WQI Score:** `{sim_wqi} / 100` ({sim_wqi_class})")
+
+    with col_sim2:
+        st.markdown("### 🛠️ AI Mitigation Command & Chemical Protocols")
+        
+        if sim_status == "SAFE":
+            st.success("✅ **Standard Operating Protocol**\n\n* **Chlorination:** Maintain baseline chlorine dosing (1.5 mg/L).\n* **Filtration:** Standard rapid sand filter flow rate.\n* **Field Team:** Routine maintenance cycle.")
+        elif sim_status == "MODERATE":
+            st.warning("⚠️ **Secondary Mitigation Protocol**\n\n* **Chlorination Boost:** Increase dosage by +2.5 mg/L\n* **Coagulation:** Inject Aluminum Sulfate at 15 ppm\n* **Boil Water Advisory:** Issue Stage 1 warning within 2 km radius.")
+        else:
+            st.error("🚨 **CRITICAL OUTBREAK EMERGENCY PROTOCOL**\n\n* **Shock Chlorination:** Scale dosing to 8.0 mg/L immediately.\n* **Intake Valve Shutdown:** Isolate raw water intake.\n* **Public Safety Order:** Issue mandatory boil-water advisory across affected administrative zones.\n* **Field Logistics:** Dispatch mobile testing teams for pathogen culture sampling.")
+
+# ------------------------------------------
+# TAB 5: MULTI-STATION MAP
+# ------------------------------------------
+with tab5:
     st.subheader("Regional Monitoring Stations")
     
     map_data = pd.DataFrame({
@@ -400,9 +440,9 @@ with tab4:
     st.plotly_chart(fig_map, use_container_width=True)
 
 # ------------------------------------------
-# TAB 5: INCIDENT LOGGING & PDF REPORTS (FEATURE #4)
+# TAB 6: INCIDENT LOGGING & PDF REPORTS
 # ------------------------------------------
-with tab5:
+with tab6:
     st.subheader("📜 Incident Reporting & Export Suite")
     
     col_a, col_b = st.columns([1, 1])
@@ -421,7 +461,6 @@ with tab5:
             st.success("Current telemetry reading logged successfully!")
 
     with col_b:
-        # Generate and Download Official PDF Report
         pdf_bytes = generate_pdf_report(water_metrics, wqi_score, wqi_class, status)
         st.download_button(
             label="📄 Download Official PDF Report",
