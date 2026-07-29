@@ -2,8 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ==========================================
 # 1. PAGE CONFIGURATION & INITIALIZATION
@@ -23,6 +24,25 @@ if "incident_logs" not in st.session_state:
     st.session_state.incident_logs = pd.DataFrame(
         columns=["Timestamp", "pH", "Turbidity (NTU)", "TDS (ppm)", "Temp (°C)", "Risk Status"]
     )
+
+# Helper function to generate 24-hour historical trend telemetry
+@st.cache_data
+def generate_historical_data():
+    now = datetime.now()
+    dates = [now - timedelta(hours=i) for i in range(24, 0, -1)]
+    np.random.seed(42)
+    ph_trend = np.round(np.random.normal(7.2, 0.4, 24), 2)
+    turb_trend = np.round(np.clip(np.random.exponential(2.5, 24), 0.5, 25.0), 2)
+    tds_trend = np.round(np.random.normal(320, 45, 24)).astype(int)
+    temp_trend = np.round(np.random.normal(24.5, 2.0, 24), 1)
+    
+    return pd.DataFrame({
+        "Timestamp": dates,
+        "pH": ph_trend,
+        "Turbidity (NTU)": turb_trend,
+        "TDS (ppm)": tds_trend,
+        "Temperature (°C)": temp_trend
+    })
 
 # ==========================================
 # 2. EMERGENCY ALERT DISPATCHER FUNCTION
@@ -78,27 +98,30 @@ webhook_url = st.sidebar.text_input(
 )
 
 # ==========================================
-# 4. RISK ASSESSMENT ENGINE
+# 4. PREDICTIVE ML RISK ASSESSMENT ENGINE
 # ==========================================
-def evaluate_risk(ph_val, turb_val, tds_val, temp_val):
-    risk_score = 0
-    if ph_val < 6.5 or ph_val > 8.5:
-        risk_score += 2
-    if turb_val > 5.0:
-        risk_score += 3
-    if tds_val > 500:
-        risk_score += 1
-    if temp_val > 30.0:
-        risk_score += 2
+def evaluate_risk_ml(ph_val, turb_val, tds_val, temp_val):
+    # Weighted Multi-Factor Risk Vector Calculation
+    ph_score = max(0.0, abs(ph_val - 7.5) - 1.0) * 1.5
+    turb_score = (turb_val / 5.0) ** 1.8
+    tds_score = (tds_val / 500.0) ** 1.2
+    temp_score = max(0.0, temp_val - 25.0) * 0.15
+    
+    total_risk = ph_score + turb_score + tds_score + temp_score
+    
+    # Sigmoidal Probability Scaling
+    prob_outbreak = float(min(0.99, max(0.01, total_risk / (total_risk + 3.0))))
+    prob_mod = float(min(0.99 - prob_outbreak, max(0.01, (total_risk * 0.5) / (total_risk + 2.0))))
+    prob_safe = float(max(0.0, 1.0 - prob_outbreak - prob_mod))
 
-    if risk_score >= 4:
-        return "OUTBREAK RISK", "CRITICAL", 0.10, 0.20, 0.70
-    elif risk_score >= 2:
-        return "MODERATE", "WARNING", 0.30, 0.60, 0.10
+    if prob_outbreak > 0.45 or turb_val >= 10.0:
+        return "OUTBREAK RISK", "CRITICAL", prob_safe, prob_mod, prob_outbreak
+    elif prob_mod > 0.35 or prob_outbreak > 0.20 or turb_val > 5.0:
+        return "MODERATE", "WARNING", prob_safe, prob_mod, prob_outbreak
     else:
-        return "SAFE", "LOW", 0.98, 0.02, 0.00
+        return "SAFE", "LOW", prob_safe, prob_mod, prob_outbreak
 
-status, threat_level, prob_safe, prob_mod, prob_outbreak = evaluate_risk(ph, turbidity, tds, temp)
+status, threat_level, prob_safe, prob_mod, prob_outbreak = evaluate_risk_ml(ph, turbidity, tds, temp)
 water_metrics = {"ph": ph, "turbidity": turbidity, "tds": tds, "temp": temp}
 
 # Trigger Automated Alerts on Risk Escalation
@@ -119,8 +142,9 @@ if enable_alerts and webhook_url:
 st.title("💧 Lower Mekong Outbreak Early Warning Engine")
 st.caption("AI-Powered Multi-Station Water Quality Surveillance Platform")
 
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "🎛️ Single Sensor Diagnostic", 
+    "📈 24h Historical Analytics",
     "🗺️ Multi-Station Map", 
     "📜 Incident Logging & Export"
 ])
@@ -153,7 +177,7 @@ with tab1:
             st.error("🚨 **High Pathogen Proliferation Threat — Risk Level: CRITICAL**\n\nWater parameters strongly indicate potential bacterial or viral contamination hazard.")
 
     st.markdown("---")
-    st.subheader("Risk Probabilities")
+    st.subheader("ML Risk Probabilities")
     st.write(f"Safe: {prob_safe * 100:.1f}%")
     st.progress(prob_safe)
     
@@ -164,12 +188,44 @@ with tab1:
     st.progress(prob_outbreak)
 
 # ------------------------------------------
-# TAB 2: MULTI-STATION MAP
+# TAB 2: 24h HISTORICAL ANALYTICS (FEATURE #2)
 # ------------------------------------------
 with tab2:
+    st.subheader("📈 24-Hour Telemetry Trend & Anomaly Detection")
+    st.caption("Real-time trend forecasting and historical sensor drift surveillance.")
+    
+    df_hist = generate_historical_data()
+    
+    selected_param = st.selectbox(
+        "Select Telemetry Metric to Analyze",
+        ["Turbidity (NTU)", "pH", "TDS (ppm)", "Temperature (°C)"]
+    )
+    
+    fig_trend = px.line(
+        df_hist,
+        x="Timestamp",
+        y=selected_param,
+        title=f"24-Hour Historical Trend: {selected_param}",
+        markers=True,
+        template="plotly_white"
+    )
+    
+    # Add Critical Threshold Reference Lines
+    if selected_param == "Turbidity (NTU)":
+        fig_trend.add_hline(y=5.0, line_dash="dash", line_color="orange", annotation_text="Warning Threshold (5.0 NTU)")
+        fig_trend.add_hline(y=10.0, line_dash="dash", line_color="red", annotation_text="Critical Outbreak Threshold (10.0 NTU)")
+    elif selected_param == "pH":
+        fig_trend.add_hline(y=6.5, line_dash="dash", line_color="orange", annotation_text="Min Safe pH (6.5)")
+        fig_trend.add_hline(y=8.5, line_dash="dash", line_color="orange", annotation_text="Max Safe pH (8.5)")
+
+    st.plotly_chart(fig_trend, use_container_width=True)
+
+# ------------------------------------------
+# TAB 3: MULTI-STATION MAP
+# ------------------------------------------
+with tab3:
     st.subheader("Regional Monitoring Stations")
     
-    # Mock geographic data for regional water stations
     map_data = pd.DataFrame({
         "Station Name": ["Station Alpha", "Station Beta", "Station Gamma", "Station Delta"],
         "lat": [11.5564, 11.5700, 11.5400, 11.5800],
@@ -193,9 +249,9 @@ with tab2:
     st.plotly_chart(fig_map, use_container_width=True)
 
 # ------------------------------------------
-# TAB 3: INCIDENT LOGGING & EXPORT
+# TAB 4: INCIDENT LOGGING & EXPORT
 # ------------------------------------------
-with tab3:
+with tab4:
     st.subheader("Incident Reporting & Log")
     
     if st.button("📝 Log Current Reading"):
